@@ -1,7 +1,7 @@
 name: CI
 
 env:
-  build_cmd: xcodebuild CODE_SIGNING_ALLOWED="NO" CODE_SIGNING_REQUIRED="NO" CODE_SIGN_IDENTITY="" -target
+  build_cmd: xcodebuild CODE_SIGNING_ALLOWED="NO" CODE_SIGNING_REQUIRED="NO" CODE_SIGN_IDENTITY="" -sdk iphoneos11.0 -configuration Release -target
 
 on:
   push:
