@@ -1,3 +1,28 @@
+// Copyright (c) 2013, Facebook, Inc.
+// All rights reserved.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//   * Redistributions of source code must retain the above copyright notice,
+//     this list of conditions and the following disclaimer.
+//   * Redistributions in binary form must reproduce the above copyright notice,
+//     this list of conditions and the following disclaimer in the documentation
+//     and/or other materials provided with the distribution.
+//   * Neither the name Facebook nor the names of its contributors may be used to
+//     endorse or promote products derived from this software without specific
+//     prior written permission.
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+#include "fishhook.h"
+
 #include <dlfcn.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -10,6 +35,10 @@
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
 #include <mach-o/nlist.h>
+
+#if __has_include(<ptrauth.h>)
+#include <ptrauth.h>
+#endif
 
 #ifdef __LP64__
 typedef struct mach_header_64 mach_header_t;
@@ -27,10 +56,6 @@ typedef struct nlist nlist_t;
 
 #ifndef SEG_DATA_CONST
 #define SEG_DATA_CONST  "__DATA_CONST"
-#endif
-
-#ifndef SEG_AUTH_CONST
-#define SEG_AUTH_CONST  "__AUTH_CONST"
 #endif
 
 struct rebindings_entry {
@@ -60,26 +85,35 @@ static int prepend_rebindings(struct rebindings_entry **rebindings_head,
   return 0;
 }
 
-static vm_prot_t get_protection(void *sectionStart) {
+#if 0
+static int get_protection(void *addr, vm_prot_t *prot, vm_prot_t *max_prot) {
   mach_port_t task = mach_task_self();
   vm_size_t size = 0;
-  vm_address_t address = (vm_address_t)sectionStart;
+  vm_address_t address = (vm_address_t)addr;
   memory_object_name_t object;
-#if __LP64__
+#ifdef __LP64__
   mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
   vm_region_basic_info_data_64_t info;
-  kern_return_t info_ret = vm_region_64(task, &address, &size, VM_REGION_BASIC_INFO_64, (vm_region_info_64_t)&info, &count, &object);
+  kern_return_t info_ret = vm_region_64(
+      task, &address, &size, VM_REGION_BASIC_INFO_64, (vm_region_info_64_t)&info, &count, &object);
 #else
   mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT;
   vm_region_basic_info_data_t info;
   kern_return_t info_ret = vm_region(task, &address, &size, VM_REGION_BASIC_INFO, (vm_region_info_t)&info, &count, &object);
 #endif
   if (info_ret == KERN_SUCCESS) {
-    return info.protection;
-  } else {
-    return VM_PROT_READ;
+    if (prot != NULL)
+      *prot = info.protection;
+
+    if (max_prot != NULL)
+      *max_prot = info.max_protection;
+
+    return 0;
   }
+
+  return -1;
 }
+#endif
 
 static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
                                            section_t *section,
@@ -89,10 +123,11 @@ static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
                                            uint32_t *indirect_symtab) {
   uint32_t *indirect_symbol_indices = indirect_symtab + section->reserved1;
   void **indirect_symbol_bindings = (void **)((uintptr_t)slide + section->addr);
+
   for (uint i = 0; i < section->size / sizeof(void *); i++) {
     uint32_t symtab_index = indirect_symbol_indices[i];
     if (symtab_index == INDIRECT_SYMBOL_ABS || symtab_index == INDIRECT_SYMBOL_LOCAL ||
-        symtab_index == (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS)) {
+        symtab_index == (INDIRECT_SYMBOL_LOCAL   | INDIRECT_SYMBOL_ABS)) {
       continue;
     }
     uint32_t strtab_offset = symtab[symtab_index].n_un.n_strx;
@@ -101,25 +136,37 @@ static void perform_rebinding_with_section(struct rebindings_entry *rebindings,
     struct rebindings_entry *cur = rebindings;
     while (cur) {
       for (uint j = 0; j < cur->rebindings_nel; j++) {
-        if (symbol_name_longer_than_1 &&
-            strcmp(&symbol_name[1], cur->rebindings[j].name) == 0) {
-          if (cur->rebindings[j].replaced != NULL &&
-              indirect_symbol_bindings[i] != cur->rebindings[j].replacement) {
+        if (symbol_name_longer_than_1 && strcmp(&symbol_name[1], cur->rebindings[j].name) == 0) {
+          kern_return_t err;
+
+          if (cur->rebindings[j].replaced != NULL && indirect_symbol_bindings[i] != cur->rebindings[j].replacement)
             *(cur->rebindings[j].replaced) = indirect_symbol_bindings[i];
-          }
-          bool is_prot_changed = false;
-          void **address_to_write = indirect_symbol_bindings + i;
-          vm_prot_t prot = get_protection(address_to_write);
-          if ((prot & VM_PROT_WRITE) == 0) {
-            is_prot_changed = true;
-            kern_return_t success = vm_protect(mach_task_self(), (vm_address_t)address_to_write, sizeof(void *), false, prot | VM_PROT_WRITE);
-            if (success != KERN_SUCCESS) {
-              goto symbol_loop;
+
+          /**
+           * 1. Moved the vm protection modifying codes to here to reduce the
+           *    changing scope.
+           * 2. Adding VM_PROT_WRITE mode unconditionally because vm_region
+           *    API on some iOS/Mac reports mismatch vm protection attributes.
+           * -- Lianfu Hao Jun 16th, 2021
+           **/
+          err = vm_protect (mach_task_self (), (uintptr_t)indirect_symbol_bindings, section->size, 0, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+          if (err == KERN_SUCCESS) {
+            /**
+             * Once we failed to change the vm protection, we
+             * MUST NOT continue the following write actions!
+             * iOS 15 has corrected the const segments prot.
+             * -- Lionfore Hao Jun 11th, 2021
+             **/
+            #if !__has_feature(ptrauth_calls)
+            indirect_symbol_bindings[i] = cur->rebindings[j].replacement;
+            #else
+            void *replacement = cur->rebindings[j].replacement;
+            if (!strcmp(section->sectname, "__auth_got")) {
+              void *stripped = ptrauth_strip(replacement, ptrauth_key_process_independent_code);
+              replacement = ptrauth_sign_unauthenticated(stripped, ptrauth_key_process_independent_code, &indirect_symbol_bindings[i]);
             }
-          }
-          indirect_symbol_bindings[i] = cur->rebindings[j].replacement;
-          if (is_prot_changed) {
-            vm_protect(mach_task_self(), (vm_address_t)address_to_write, sizeof(void *), false, prot);
+            indirect_symbol_bindings[i] = replacement;
+            #endif
           }
           goto symbol_loop;
         }
@@ -175,8 +222,7 @@ static void rebind_symbols_for_image(struct rebindings_entry *rebindings,
     cur_seg_cmd = (segment_command_t *)cur;
     if (cur_seg_cmd->cmd == LC_SEGMENT_ARCH_DEPENDENT) {
       if (strcmp(cur_seg_cmd->segname, SEG_DATA) != 0 &&
-          strcmp(cur_seg_cmd->segname, SEG_DATA_CONST) != 0 &&
-          strcmp(cur_seg_cmd->segname, SEG_AUTH_CONST) != 0) {
+          strcmp(cur_seg_cmd->segname, SEG_DATA_CONST) != 0) {
         continue;
       }
       for (uint j = 0; j < cur_seg_cmd->nsects; j++) {
@@ -195,21 +241,21 @@ static void rebind_symbols_for_image(struct rebindings_entry *rebindings,
 
 static void _rebind_symbols_for_image(const struct mach_header *header,
                                       intptr_t slide) {
-  rebind_symbols_for_image(_rebindings_head, header, slide);
+    rebind_symbols_for_image(_rebindings_head, header, slide);
 }
 
 int rebind_symbols_image(void *header,
                          intptr_t slide,
                          struct rebinding rebindings[],
                          size_t rebindings_nel) {
-  struct rebindings_entry *rebindings_head = NULL;
-  int retval = prepend_rebindings(&rebindings_head, rebindings, rebindings_nel);
-  rebind_symbols_for_image(rebindings_head, (const struct mach_header *) header, slide);
-  if (rebindings_head) {
-    free(rebindings_head->rebindings);
-  }
-  free(rebindings_head);
-  return retval;
+    struct rebindings_entry *rebindings_head = NULL;
+    int retval = prepend_rebindings(&rebindings_head, rebindings, rebindings_nel);
+    rebind_symbols_for_image(rebindings_head, (const struct mach_header *) header, slide);
+    if (rebindings_head) {
+      free(rebindings_head->rebindings);
+    }
+    free(rebindings_head);
+    return retval;
 }
 
 int rebind_symbols(struct rebinding rebindings[], size_t rebindings_nel) {
