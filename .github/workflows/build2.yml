@@ -1,0 +1,86 @@
+name: CI (Debug)
+
+env:
+  build_cmd: xcodebuild CODE_SIGNING_ALLOWED="NO" CODE_SIGNING_REQUIRED="NO" CODE_SIGN_IDENTITY="" -sdk iphoneos -configuration Debug -target
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+      
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+      
+  workflow_dispatch:
+  
+jobs:
+  build:
+    name: Build
+    runs-on: macos-12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        
+      - name: Select Xcode version (14.1)
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_14.1.app
+      
+      - name: Build library
+        run: |
+          ${{ env.build_cmd }} ellekit
+          
+          mkdir -p ${{ github.workspace }}/product
+          cp -R ${{ github.workspace }}/build/Release-iphoneos/libellekit.dylib ${{ github.workspace }}/product/libellekit.dylib
+          
+      - name: Upload library to artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ellekit-library
+          path: ${{ github.workspace }}/product/libellekit.dylib
+      
+      - name: Build injector
+        run: |
+          ${{ env.build_cmd }} injector
+          
+          mkdir -p ${{ github.workspace }}/product
+          cp -R ${{ github.workspace }}/build/Release-iphoneos/libinjector.dylib ${{ github.workspace }}/product/libinjector.dylib
+          
+      - name: Upload injector to artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: injector
+          path: ${{ github.workspace }}/product/libinjector.dylib
+          
+      - name: Build loader
+        run: |
+          ${{ env.build_cmd }} loader
+          
+          mkdir -p ${{ github.workspace }}/product
+          cp -R ${{ github.workspace }}/build/Release-iphoneos/loader ${{ github.workspace }}/product/loader
+          
+      - name: Upload loader to artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: loader
+          path: ${{ github.workspace }}/product/loader
+          
+      - name: Build launchd hook
+        run: |
+          ${{ env.build_cmd }} launchd
+          
+          mkdir -p ${{ github.workspace }}/product
+          cp -R ${{ github.workspace }}/build/Release-iphoneos/liblaunchd.dylib ${{ github.workspace }}/product/pspawn.dylib
+          
+      - name: Upload launchd hook to artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: pspawn
+          path: ${{ github.workspace }}/product/pspawn.dylib
