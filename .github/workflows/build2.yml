@@ -38,7 +38,7 @@ jobs:
           ${{ env.build_cmd }} ellekit
           
           mkdir -p ${{ github.workspace }}/product
-          cp -R ${{ github.workspace }}/build/Release-iphoneos/libellekit.dylib ${{ github.workspace }}/product/libellekit.dylib
+          cp -R ${{ github.workspace }}/build/Debug-iphoneos/libellekit.dylib ${{ github.workspace }}/product/libellekit.dylib
           
       - name: Upload library to artifacts
         uses: actions/upload-artifact@v3
@@ -51,7 +51,7 @@ jobs:
           ${{ env.build_cmd }} injector
           
           mkdir -p ${{ github.workspace }}/product
-          cp -R ${{ github.workspace }}/build/Release-iphoneos/libinjector.dylib ${{ github.workspace }}/product/libinjector.dylib
+          cp -R ${{ github.workspace }}/build/Debug-iphoneos/libinjector.dylib ${{ github.workspace }}/product/libinjector.dylib
           
       - name: Upload injector to artifacts
         uses: actions/upload-artifact@v3
@@ -64,7 +64,7 @@ jobs:
           ${{ env.build_cmd }} loader
           
           mkdir -p ${{ github.workspace }}/product
-          cp -R ${{ github.workspace }}/build/Release-iphoneos/loader ${{ github.workspace }}/product/loader
+          cp -R ${{ github.workspace }}/build/Debug-iphoneos/loader ${{ github.workspace }}/product/loader
           
       - name: Upload loader to artifacts
         uses: actions/upload-artifact@v3
@@ -77,7 +77,7 @@ jobs:
           ${{ env.build_cmd }} launchd
           
           mkdir -p ${{ github.workspace }}/product
-          cp -R ${{ github.workspace }}/build/Release-iphoneos/liblaunchd.dylib ${{ github.workspace }}/product/pspawn.dylib
+          cp -R ${{ github.workspace }}/build/Debug-iphoneos/liblaunchd.dylib ${{ github.workspace }}/product/pspawn.dylib
           
       - name: Upload launchd hook to artifacts
         uses: actions/upload-artifact@v3
