@@ -108,11 +108,13 @@ public func LHHookFunctions(_ hooks: UnsafePointer<LHFunctionHook>, _ count: Int
 
         let _: Void = hook(targetHook.function, targetHook.replacement)
 
+        #if DEBUG
         if let orig = targetHook.oldptr {
             print("[+] ellekit: Performed one hook in LHHookFunctions from \(String(describing: target)) with orig at \(String(describing: orig))")
         } else {
             print("[+] ellekit: Performed one hook in LHHookFunctions from \(String(describing: target)) with no orig")
         }
+        #endif
     }
 
     let krt3 = mach_vm_protect(mach_task_self_, origPageAddress, UInt64(vm_page_size), 0, VM_PROT_READ | VM_PROT_EXECUTE)

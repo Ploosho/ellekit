@@ -15,12 +15,16 @@ public func messageHook(_ cls: AnyClass, _ sel: Selector, _ imp: IMP, _ result: 
     if let result {
         if let old,
            let fp = unsafeBitCast(old, to: UnsafeMutableRawPointer?.self) {
+            #if DEBUG
             print("[+] ellekit: Successfully got orig pointer for an objc message hook")
+            #endif
             result.pointee = fp.makeCallable()
         } else if let superclass = class_getSuperclass(cls),
                   let ptr = class_getMethodImplementation(superclass, sel),
                   let fp = unsafeBitCast(ptr, to: UnsafeMutableRawPointer?.self) {
+            #if DEBUG
             print("[+] ellekit: Successfully got orig pointer from superclass for an objc message hook")
+            #endif
             result.pointee = fp.makeCallable()
         }
     }

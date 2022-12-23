@@ -104,12 +104,16 @@ func getOriginal(_ target: UnsafeMutableRawPointer, _ size: Int? = nil, _ addr: 
 
     if let totalSize {
         memcpy(ptr, code, codesize)
+        #if DEBUG
         print("[+] ellekit: Orig written to:", ptr, "for function", totalSize)
+        #endif
     } else {
         memcpy(ptr, code, codesize)
         mach_vm_protect(mach_task_self_, mach_vm_address_t(UInt(bitPattern: ptr)), UInt64(vm_page_size), 0, VM_PROT_READ | VM_PROT_EXECUTE)
         sys_icache_invalidate(ptr, Int(vm_page_size))
+        #if DEBUG
         print("[+] ellekit: Orig written to:", ptr)
+        #endif
     }
     return (ptr, codesize)
 }

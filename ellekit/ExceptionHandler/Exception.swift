@@ -40,7 +40,9 @@ public final class ExceptionHandler {
     }
 
     public func startPortLoop() {
+        #if DEBUG
         print("[+] ellekit: starting exception handler")
+        #endif
         self.thread.async { [weak self] in
             Self.portLoop(self)
         }
