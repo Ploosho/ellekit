@@ -27,7 +27,9 @@ public func hook(_ stockTarget: UnsafeMutableRawPointer, _ stockReplacement: Uns
 
     let targetSize = findFunctionSize(target) ?? 6
 
+    #if DEBUG
     print("[*] ellekit: Size of target:", targetSize as Any)
+    #endif
 
     let branchOffset = (Int(UInt(bitPattern: replacement)) - Int(UInt(bitPattern: target))) / 4
 
@@ -37,18 +39,22 @@ public func hook(_ stockTarget: UnsafeMutableRawPointer, _ stockReplacement: Uns
 
     // fast big branch option
     if targetSize >= 5 && abs(branchOffset / 1024 / 1024) > 128 {
-         print("[*] Big branch")
+        #if DEBUG
+        print("[*] Big branch")
+        #endif
 
-         let target_addr = UInt64(UInt(bitPattern: replacement))
+        let target_addr = UInt64(UInt(bitPattern: replacement))
 
-         code = assembleJump(target_addr, pc: 0, link: false, big: true)
+        code = assembleJump(target_addr, pc: 0, link: false, big: true)
      } else if abs(branchOffset / 1024 / 1024) > 128 { // tiny function beyond 4gb hook... using exception handler
         if exceptionHandler == nil {
              exceptionHandler = .init()
         }
         code = [0x20, 0x00, 0x20, 0xD4] // brk #1
     } else { // fastest and simplest branch
+        #if DEBUG
         print("[*] ellekit: Small branch")
+        #endif
         @InstructionBuilder
         var codeBuilder: [UInt8] {
             b(branchOffset)
@@ -86,14 +92,18 @@ public func hook(_ originalTarget: UnsafeMutableRawPointer, _ originalReplacemen
     let replacement = originalReplacement.makeReadable()
 
     let targetSize = findFunctionSize(target) ?? 6
+    #if DEBUG
     print("[*] ellekit: Size of target:", targetSize as Any)
+    #endif
 
     let branchOffset = (Int(UInt(bitPattern: replacement)) - Int(UInt(bitPattern: target))) / 4
 
     var code = [UInt8]()
 
     if targetSize >= 5 && abs(branchOffset / 1024 / 1024) > 128 {
+        #if DEBUG
         print("[*] Big branch")
+        #endif
 
         let target_addr = UInt64(UInt(bitPattern: replacement))
 
@@ -104,7 +114,9 @@ public func hook(_ originalTarget: UnsafeMutableRawPointer, _ originalReplacemen
         }
         code = [0x20, 0x00, 0x20, 0xD4] // process crash!
     } else {
+        #if DEBUG
         print("[*] ellekit: Small branch")
+        #endif
         @InstructionBuilder
         var codeBuilder: [UInt8] {
             b(branchOffset)

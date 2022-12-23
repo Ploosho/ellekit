@@ -47,10 +47,14 @@ public func hookClassPair(_ targetClass: AnyClass, _ hookClass: AnyClass, _ base
     var method_count: UInt32 = 0
     let method_list = class_copyMethodList(hookClass, &method_count)
     let methods = Array(UnsafeBufferPointer(start: method_list, count: Int(method_count)))
+    #if DEBUG
     print("[*] ellekit: \(method_count) methods found in hooked class")
+    #endif
     for iter in 0..<Int(method_count) {
         let selector = method_getName(methods[iter])
+        #if DEBUG
         NSLog("[*] ellekit: hooked method is", sel_getName(selector))
+        #endif
 
         let hookedImp = method_getImplementation(methods[iter])
 

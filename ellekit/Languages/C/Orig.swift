@@ -15,7 +15,9 @@ func getOriginal(_ target: UnsafeMutableRawPointer, _ size: Int? = nil, _ addr: 
 
     if size == 1 {
 
+        #if DEBUG
         print("[*] ellekit: Small function")
+        #endif
 
         let codesize = MemoryLayout<[UInt8]>.size
 
@@ -35,7 +37,9 @@ func getOriginal(_ target: UnsafeMutableRawPointer, _ size: Int? = nil, _ addr: 
         var code: [UInt8] = []
         let isn = UInt64(combine(unpatched))
         if checkBranch(unpatched) {
+            #if DEBUG
             print("[*] ellekit: Redirecting branch")
+            #endif
             code = redirectBranch(target, isn, ptr)
         } else {
             unpatched = Array([unpatched].rebind(formerPC: UInt64(UInt(bitPattern: target)), newPC: UInt64(UInt(bitPattern: ptr))).joined())
@@ -74,7 +78,9 @@ func getOriginal(_ target: UnsafeMutableRawPointer, _ size: Int? = nil, _ addr: 
     var address: mach_vm_address_t = addr ?? 0
 
     if let addr, let totalSize {
+        #if DEBUG
         print("[*] ellekit: Reusing page")
+        #endif
         ptr = UnsafeMutableRawPointer(bitPattern: UInt(addr))?.advanced(by: totalSize)
     } else {
         mach_vm_allocate(mach_task_self_, &address, UInt64(vm_page_size), VM_FLAGS_ANYWHERE)
